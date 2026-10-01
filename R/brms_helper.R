@@ -68,7 +68,7 @@ add_SSURGO_interactions = function(df, SSURGO) {
 # }
 # 
 
-fit_lmer_SSURGO.brms = function(train, y, group, SSURGO,
+fit_lmer_SSURGO = function(train, y, group, SSURGO,
                                 varying_slopes=TRUE,
                                 sigmabeta=TRUE,
                                 cor=FALSE, ...) {
@@ -211,54 +211,39 @@ fit_lmer_SSURGO.brms = function(train, y, group, SSURGO,
   f$SSURGO_cols = SSURGO
   f
 }
-# 
-# predict_lmer_vivs2_cor_SSURGO_sigmabeta.brms = function(fit, newdata, y) {
-#   newdata = newdata %>%
-#     prefix_numeric_colnames
-#   newdata = add_SSURGO_interactions(newdata, fit$SSURGO_cols)
-#   
-#   newdata = bake(fit$recipe_SSURGO, newdata)
-#   predict_lm.brms(fit, newdata, y)
-# }
-# 
-# 
-# # add site level means2
-# predict_lmer_vivs2_cor_SSURGO2.brms2 = function(fit, newdata, y) {
-#   
-#   newdata = newdata %>% inner_join(get_SSURGO_site_means2(newdata), by="site_id")
-#   newdata = newdata %>%
-#     prefix_numeric_colnames
-#   newdata = add_SSURGO_interactions(newdata, fit$SSURGO_cols)
-#   
-#   newdata = bake(fit$recipe_SSURGO, newdata)
-#   
-#   predict_lm.brms(fit, newdata, y)
-# }
-# 
-# 
-# predict_lmer_SSURGO_mean2.brms = predict_lmer_vivs2_cor_SSURGO2.brms2
-# 
-# predict_lm.brms = function(fit, newdata, y) {
-#   p1 = add_predicted_draws(fit, 
-#                           newdata=newdata %>% prefix_numeric_colnames,
-#                           allow_new_levels=TRUE,
-#                           sample_new_levels="uncertainty") %>%
-#     ungroup
-#   
-#   p2 = add_epred_draws(fit, 
-#                        newdata=newdata %>% prefix_numeric_colnames,
-#                        allow_new_levels=TRUE,
-#                        sample_new_levels="uncertainty") %>%
-#     rename(.prediction=.epred)
-#     ungroup
-#   
-#   trans = function(p, suffix="") {
-#     p %>%
-#       mutate(.prediction = .prediction * fit$y_stats$sd[[1]] + fit$y_stats$mean[[1]]) %>%
-#       select(.row, .draw, .prediction) %>%
-#       rename(".pred_{y}{suffix}" := .prediction)
-#   }
-#   
-#   inner_join(trans(p1),
-#              trans(p2, "_epred"))
-# }
+
+predict_lm.brms = function(fit, newdata, y) {
+  p1 = add_predicted_draws(fit,
+                          newdata=newdata %>% prefix_numeric_colnames,
+                          allow_new_levels=TRUE,
+                          sample_new_levels="uncertainty") %>%
+    ungroup
+
+  p2 = add_epred_draws(fit,
+                       newdata=newdata %>% prefix_numeric_colnames,
+                       allow_new_levels=TRUE,
+                       sample_new_levels="uncertainty") %>%
+    rename(.prediction=.epred)
+    ungroup
+
+  trans = function(p, suffix="") {
+    p %>%
+      mutate(.prediction = .prediction * fit$y_stats$sd[[1]] + fit$y_stats$mean[[1]]) %>%
+      select(.row, .draw, .prediction) %>%
+      rename(".pred_{y}{suffix}" := .prediction)
+  }
+
+  inner_join(trans(p1),
+             trans(p2, "_epred"))
+}
+
+predict_lmer_SSURGO = function(fit, newdata, y) {
+  
+  newdata = newdata %>%
+    prefix_numeric_colnames
+  newdata = add_SSURGO_interactions(newdata, fit$SSURGO_cols)
+  
+  newdata = bake(fit$recipe_SSURGO, newdata)
+  
+  predict_lm.brms(fit, newdata, y)
+}

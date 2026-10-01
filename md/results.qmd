@@ -14,6 +14,8 @@ tar_config_set(store="../../../_targets")
 ```{r}
 tar_load(predict_soil_combined)
 
+predict_soil_combined$
+
 predict_soil_combined %>%
   #filter(model=="plsr") %>%
   group_by(n, k, cluster, model) %>%

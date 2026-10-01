@@ -90,8 +90,9 @@ spectra_targets = list(
              get_NIR_snv(hudson_NIR)),
   tar_target(hudson_NIR_snv_64,
              interpolate_spectra(hudson_NIR_snv, length.out=64)),
-  tar_target(hudson_NIR_snv_32,
-             interpolate_spectra(hudson_NIR_snv, length.out=32))
+  # very coarse spectrum used for quickly testing models
+  tar_target(hudson_NIR_snv_16,
+             interpolate_spectra(hudson_NIR_snv, length.out=16))
 )
   
 # define training and test splits
@@ -132,8 +133,8 @@ split_targets = list(
 
 # define training and test sets
 cv_values = bind_rows(
-  expand_grid(site = HUDSON_FARM_IDS %>% head(2),
-              n_train=c(0, 3) %>% head(2),
+  expand_grid(site = HUDSON_FARM_IDS %>% head(1),
+              n_train=c(0, 3) %>% head(1),
               k=1:1) %>%
     filter(k == 1 | n_train > 0) %>%
     rowwise() %>%
@@ -144,7 +145,7 @@ cv_values = bind_rows(
 ) %>%
   expand_grid(NIR_transform=c(
     "snv",
-    "snv_32"
+    "snv_16"
   )) %>%
   mutate(train_sites=syms(train_sites),
          test_sites=syms(test_sites),
@@ -215,7 +216,7 @@ model_values = bind_rows(
   #tibble_row(model="cubist", y=list(list(eoc_tot_c="log1p"))),
   tibble_row(model="cubist_conformal", y=list(list(eoc_tot_c="log1p"))),
 
-  tibble_row(model="lmer_SSURGO.brms",
+  tibble_row(model="lmer_SSURGO",
              y=list(list(eoc_tot_c="log1p")),
              fit_args=list(list(group="farm_id + site_id*top",
                                 SSURGO=c("clay", "sand", "silt", "pH")))),
@@ -260,7 +261,7 @@ fit_values = tar_add_steps_to_values(cv_values, cv_targets) %>%
   expand_grid(model_values) %>%
   mutate(args_str = named_list_to_str2(args)) %>%
   # don't fit correlation matrix models with more than 64 wavelengths
-  filter(xor(NIR_transform == "snv_32", !grepl("lmer", model) ))
+  filter(xor(NIR_transform == "snv_16", !grepl("lmer", model) ))
 
 
 fit_targets = tar_map(
@@ -271,7 +272,7 @@ fit_targets = tar_map(
     do.call(fit_function, c(list(
       y=names(y),
       train=train %>%
-        sample_frac(0.25) %>%
+        sample_frac(0.1) %>%
         transform_cols(y_transforms),
       test=test),
       fit_args) ) ),
