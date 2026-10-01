@@ -30,17 +30,6 @@ get_NIR_matrix = function(df) {
     select(any_of(get_numeric_colnames(df))) %>%
     as.matrix
 }
-# 
-# # select columns that dont have numeric names
-# get_NIR_metadata = function(df) {
-#   df %>%
-#     select(!any_of(get_numeric_colnames(df)))
-# }
-# 
-# get_neospectra_NIR = function(neospectra) {
-#   neospectra %>%
-#     select(kssl_id, scanner_SerialNo, Lab, SCAN_ID, any_of(sort_numeric_colnames(get_numeric_colnames(neospectra))))
-# }
 
 get_NIR_snv = function(neospectra_NIR, center=TRUE, scale=TRUE) {
   NIR_cols = get_numeric_colnames(neospectra_NIR)

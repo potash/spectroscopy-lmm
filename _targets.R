@@ -23,20 +23,16 @@ tar_option_set(packages = c(
   "cmdstanr", # bayesian modeling
   "scales", # variable transformations
   "mdatools", # PLSR
-  #"glmnet", # ridge regression
   "tidybayes",
-  "resemble",
-  #"rstanarm",
+  "resemble", # MBL
   "tidymodels",
-  #"rwavelet",
-  "brms",
-  "rlang"#,
-  #"sf",
-  #"soilDB"
+  "brms", # LMM
+  "rlang"
   ),
   workspace_on_error=FALSE)
 
-sites = read_csv("data/hudson_sites.csv")
+# TODO: these shoudl be anonymized numbers instead
+sites = read_csv("~/uiuc/spectroscopy/manuscript/code/data/hudson_sites.csv")
 HUDSON_SITES = sites$site_id 
 HUDSON_FARM_IDS = sites$farm_id %>% unique
 
@@ -91,8 +87,8 @@ spectra_targets = list(
   tar_target(hudson_NIR_snv_64,
              interpolate_spectra(hudson_NIR_snv, length.out=64)),
   # very coarse spectrum used for quickly testing models
-  tar_target(hudson_NIR_snv_16,
-             interpolate_spectra(hudson_NIR_snv, length.out=16))
+  tar_target(hudson_NIR_snv_32,
+             interpolate_spectra(hudson_NIR_snv, length.out=32))
 )
   
 # define training and test splits
@@ -131,21 +127,23 @@ split_targets = list(
   
 )
 
-# define training and test sets
+# generate training and test sets and truth at soil sample and site-layer levels
+# standardize training set NIR predictors
+# apply that same transformation to the test set
 cv_values = bind_rows(
-  expand_grid(site = HUDSON_FARM_IDS %>% head(1),
-              n_train=c(0, 3) %>% head(1),
+  expand_grid(site = HUDSON_FARM_IDS %>% head(3),
+              n_train=c(0, 3) %>% head(2),
               k=1:1) %>%
     filter(k == 1 | n_train > 0) %>%
     rowwise() %>%
     transmute(train_sites = str_glue("hudson_lfarmo_train_{site}_{n_train}_{k}"),
               test_sites = str_glue("hudson_lfarmo_test_{site}_{n_train}_{k}"),
-              args=list(list(group=str_glue("hudson_lfarmo"), cluster=site, n=n_train, k=k))),
+              args=list(list(group=str_glue("hudson_lfarmo"), cluster=site, n_train=n_train, k=k))),
 
 ) %>%
   expand_grid(NIR_transform=c(
     "snv",
-    "snv_16"
+    "snv_32"
   )) %>%
   mutate(train_sites=syms(train_sites),
          test_sites=syms(test_sites),
@@ -178,20 +176,6 @@ cv_targets = tar_map(
     test_sites %>% 
       inner_join(hudson_soils) %>% 
       inner_join(bake(std_rec, NIR_data_test))),
-  
-  # we actually mostly don't want to standardize...
-  tar_target(
-    train_nostd, 
-    train_sites %>% 
-      inner_join(hudson_soils) %>% 
-      inner_join(hudson_lab) %>%
-      inner_join(NIR_data)),
-  tar_target(
-    test_nostd, 
-    test_sites %>% 
-      inner_join(hudson_soils) %>% 
-      inner_join(NIR_data_test)),
-  
   tar_target(
     truth, 
     test %>%
@@ -220,28 +204,25 @@ model_values = bind_rows(
              y=list(list(eoc_tot_c="log1p")),
              fit_args=list(list(group="farm_id + site_id*top",
                                 SSURGO=c("clay", "sand", "silt", "pH")))),
-  # 
+  
   # Supplementary models
   # Cubist with SSURGO
-  tibble_row(model="cubist_SSURGO", y=list(list(eoc_tot_c="log1p")),
-           fit_args = list(list(extraFactors=c("farm_id", "top", "site_id"),
-                                SSURGO=c("silt", "sand", "clay", "pH")))),
+  # tibble_row(model="cubist_SSURGO", y=list(list(eoc_tot_c="log1p")),
+  #          fit_args = list(list(extraFactors=c("farm_id", "top", "site_id"),
+  #                               SSURGO=c("silt", "sand", "clay", "pH")))),
   # 
   # # lmer no SSURGO
-  # tibble_row(model="lmer_SSURGO_mean2.brms", 
+  # tibble_row(model="lmer_SSURGO",
   #            y=list(list(eoc_tot_c="log1p")),
   #            fit_args=list(list(group="farm_id + site_id*top",
   #                               SSURGO=c(
   #                               ) ))),
   # # lmer no varying slopes
-  # tibble_row(model="lmer_SSURGO_mean2.brms",
+  # tibble_row(model="lmer_SSURGO",
   #            y=list(list(eoc_tot_c="log1p")),
   #            fit_args=list(list(group="farm_id + site_id*top",
   #                               SSURGO=c("clay", "sand", "silt", "pH"),
   #                               varying_slopes=FALSE))),
-  # 
-  # 
-  # 
 ) %>%
   # make sure there is a fit_args list in the table
   bind_rows(tibble_row(fit_args=list(list()))) %>%
@@ -259,9 +240,10 @@ model_values = bind_rows(
 
 fit_values = tar_add_steps_to_values(cv_values, cv_targets) %>%
   expand_grid(model_values) %>%
-  mutate(args_str = named_list_to_str2(args)) %>%
   # don't fit correlation matrix models with more than 64 wavelengths
-  filter(xor(NIR_transform == "snv_16", !grepl("lmer", model) ))
+  filter(
+    (grepl("lmer", model) & NIR_transform == "snv_32") |
+      (!grepl("lmer", model) & NIR_transform == "snv_32"))
 
 
 fit_targets = tar_map(
@@ -325,7 +307,7 @@ c(hudson_targets,
     command=bind_rows(!!!.x, .id="name")
   ),
   tar_combine(
-    predict_sitlayer_combined,
+    predict_sitelayer_combined,
     fit_targets$predict_sitelayer,
     command=bind_rows(!!!.x, .id="name")
   )

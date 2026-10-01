@@ -7,85 +7,494 @@ editor: visual
 ```{r}
 library(targets)
 library(tidyverse)
+library(patchwork)
+library(tidybayes)
+source("../R/spectral_helper.R")
+
 tar_config_set(store="../_targets")
-tar_config_set(store="../../../_targets")
+
+knitr::opts_chunk$set(echo=FALSE, warning=FALSE, message=FALSE, 
+                      cache=TRUE, autodep = TRUE)
+
+theme_set(theme_bw())
+```
+
+# Figure 1d: Spectroscopy data
+
+```{r fig.height=4, fig.width=4}
+tar_read(hudson_NIR) %>% 
+  mutate(location_id=str_sub(soil_id, 1, -4), .after=soil_id) %>%
+  inner_join(tar_read(hudson_locations) %>%
+               inner_join(tar_read(hudson_sites))) %>%
+  #sample_n(100) %>%
+  pivot_longer(all_of(get_numeric_colnames(.))) %>%
+  mutate(name = as.numeric(name)) %>%
+  ggplot(aes(name, value)) +
+  geom_line(aes(group=soil_id, color=farm_id), alpha=0.1) +
+  xlab("Wavelength (nm)") +
+  ylab("Reflectance (%)") +
+  theme(legend.position="none",
+        axis.title = element_text(size=18),
+        panel.grid = element_blank())
+```
+
+# Figure 2: SSURGO properties 
+
+```{r, fig.width=6}
+library(GGally)
+
+tar_read(hudson_sites) %>%
+  rename_with(function(.x) str_replace_all(.x, "(SSURGO_site_|_r)", "")) %>%
+  ggpairs(progress = FALSE,
+          columns=c("pH", "sand", "silt", "clay"),
+          diag=list(continuous=wrap("barDiag", bins=8)
+                    #, mapping=aes(color=layer)
+                    ),
+          lower = list(continuous = wrap("points"), mapping=aes(
+            alpha=0.25)),
+          upper=list(continuous = wrap("cor", stars=FALSE)),
+          legend=1) +
+  scale_color_viridis_d() +
+  scale_fill_viridis_d() +
+  theme(legend.position="right")
+```
+# Figure 3: Carbon distributions
+
+```{r}
+hudson_df = tar_read(hudson_lab) %>%
+  inner_join(tar_read(hudson_soils)) %>%
+  mutate(layer = case_match(
+    top,
+    0 ~ '0-15 cm',
+    15 ~ '15-30 cm',
+    30 ~ '30-60 cm')) %>%
+  inner_join(tar_read(hudson_sites))
+
+hudson_df_site_ordered = hudson_df %>%
+  group_by(site_id) %>%
+  summarize(median_eoc_tot_c = median(eoc_tot_c)) %>%
+  arrange(median_eoc_tot_c) %>%
+  mutate(site_id_ordered = fct_inorder(site_id))
+
+p_fields = hudson_df %>%
+  inner_join(hudson_df_site_ordered) %>%
+  ggplot(aes(site_id_ordered, eoc_tot_c)) +
+  stat_summary(fun.data=ggdist::median_qi) +
+  geom_point(aes(color=layer), alpha=0.25, position = "jitter") +
+  xlab("Field") +
+  ylab("Carbon concentration (%C)")
 ```
 
 ```{r}
-tar_load(predict_soil_combined)
-
-predict_soil_combined$
-
-predict_soil_combined %>%
-  #filter(model=="plsr") %>%
-  group_by(n, k, cluster, model) %>%
-  summarize(RMSE=sqrt(mean( (.pred_eoc_tot_c_point - eoc_tot_c)^2)),
-            eoc_tot_c = mean(eoc_tot_c)) %>%
-  group_by(model, k, n) %>%
-  summarize(mean(RMSE), sd(RMSE)/sqrt(n()), mean(eoc_tot_c), n())
+p_layers = hudson_df %>%
+  inner_join(hudson_df_site_ordered) %>%
+  ggplot(aes(layer, eoc_tot_c, color=layer)) +
+  stat_summary(fun.data=ggdist::median_qi) +
+  geom_point(alpha=0.15, position = "jitter") +
+  xlab("Soil layer") +
+  ylab("Carbon concentration (%C)")
 ```
 
 ```{r}
-library(lme4)
+library(rstanarm)
+options(mc.cores=4)
 
-predict_soil_combined %>%
-  filter(model=="plsr", n==3) %>%
-  group_by(n, k, cluster, model) %>%
-  summarize(RMSE=sqrt(mean( (.pred_eoc_tot_c_point - eoc_tot_c)^2)),
-            eoc_tot_c = mean(eoc_tot_c)) %>%
-  lmer(RMSE ~ (1|cluster), data=.) %>%
-  summary
+fit_vi = stan_glmer(eoc_tot_c ~ 
+             (1|farm_id) +
+             (1|site_id) + 
+             (1|top) +
+             (1|location_id) +
+             (1|site_id:top), data=hudson_df,
+             iter=400)
 
-predict_soil_combined %>%
-  filter(model=="plsr", n==3) %>%
-  group_by(n, k, cluster, model) %>%
-  summarize(RMSE=sqrt(mean( (.pred_eoc_tot_c_point - eoc_tot_c)^2)),
-            eoc_tot_c = mean(eoc_tot_c)) %>%
-  group_by(k) %>%
-  summarize(mean(RMSE), sd(RMSE)/sqrt(n()))
+p_sds = fit_vi %>%
+  gather_draws(b[i, j], sigma) %>%
+  mutate(group=case_when(
+    str_detect(j, "farm_id") ~ "Farm",
+    str_detect(j, "site_id:top") ~ "Field x Layer",
+    str_detect(j, "site_id") ~ "Field",
+    str_detect(j, "location_id") ~ "Core",
+    str_detect(j, "top") ~ "Layer",
+    .variable == "sigma" ~ "Sample"
+  )) %>%
+  group_by(.draw, group) %>%
+  summarize(sd=ifelse(first(group) == "Sample", first(.value), sd(.value)), n=n()) %>% 
+  mutate(n=ifelse(group == "Sample", nrow(hudson_df), n)) %>%
+  mutate(group_n = str_glue("{group}<br/>(n={n})")) %>%
+  group_by(group_n) %>%
+  mutate(median_sd = median(sd)) %>%
+  ungroup %>%
+  arrange(median_sd) %>%
+  mutate(group_n = fct_inorder(group_n)) %>%
+  ggplot(aes(group_n, sd)) +
+  stat_summary(fun.data=ggdist::median_qi) +
+  theme(axis.text.x = ggtext::element_markdown()) +
+  ylab("Standard deviation (%C)") +
+  xlab("")
+```
+
+```{r, fig.height=4}
+(p_layers + ggtitle("(a) By layer") + 
+  p_fields + ggtitle("(b) By field") + 
+   theme(axis.text.x = element_blank(),
+         axis.text.y = element_blank(),
+         axis.ticks.y = element_blank(),
+         axis.title.y = element_blank()) +
+  theme(legend.position="none")) +
+  p_sds + ggtitle("(c) Variance decomposition") +
+  plot_layout(design="111222\n#3333#", axes="collect") &
+  scale_color_viridis_d() &
+  theme(legend.position="none")
+```
+
+# Figure 4: Prediction performance
+
+```{r}
+MODELS = bind_rows(
+  plsr="PLSR",
+  plsr_stratified = "Stratified",
+  mbl="MBL",
+  qrf="QRF",
+  cubist_conformal="Cubist",
+  cubist_SSURGO="",
+)
+
+MODELS = tibble(model=names(MODELS), model_name=unlist(MODELS)) %>%
+  mutate(fit_args="none") %>%
+  bind_rows(
+    tibble_row(
+      model="lmer_SSURGO",
+    fit_args="group_farm_id + site_id*top_SSURGO_c(\"clay\", \"sand\", \"silt\", \"pH\"",
+    model_name="LMM"
+    )
+  )
+
+plot_errors = function(df, metric, metric_name, models=MODELS) {
+  df %>%
+    inner_join(
+      models %>%
+        mutate(model_name = fct_inorder(model_name))
+    ) %>%
+    mutate(metric=metric_name) %>%
+    ggplot(aes(model_name, !!sym(metric), color=model_name, group=model_name)) +
+    stat_summary(fun.data=mean_se,
+                 #fun.args = list(.width=0.5),
+                 position=position_dodge(width=0.5)) +
+    geom_hline(yintercept=0, alpha=0) +
+    scale_color_viridis_d() +
+    xlab("Model") +
+    facet_grid(metric~scenario)
+}
 ```
 
 ```{r}
-tar_load(predict_farmlayer_combined)
+recode_model_factor = function(df, models) {
+  df %>%
+    mutate(model = recode_factor(
+      model,
+      !!!models,
+      .default = "",
+      .ordered=TRUE
+    )) %>%
+    filter(model != "")
+}
 
-predict_farmlayer_combined %>%
-  group_by(model, n, k) %>%
-  mutate(coverage = between(eoc_tot_c, .pred_eoc_tot_c_q025, .pred_eoc_tot_c_q975)) %>%
-  summarize(mean(coverage), n())
+errors = tar_read(predict_soil_combined) %>%
+  rowwise() %>% 
+  mutate(y_str = named_list_to_str2(y)) %>%
+  ungroup %>%
+  left_join(tar_read(hudson_soils)) %>%
+  rowwise() %>%
+  group_by(group,
+           #lay.depth.to.top,
+           model,
+           NIR_transform,
+           fit_args,
+           y_str,
+           n_train,
+           cluster,
+           k
+           ) %>%
+  filter(!is.na(.pred_eoc_tot_c_point)) %>%
+  mutate(.pred_eoc_tot_c_point = pmin(pmax(0.01, .pred_eoc_tot_c_point), 100)) %>%
+  mutate(error = .pred_eoc_tot_c_point - eoc_tot_c,
+         error_rel=error/eoc_tot_c,
+         ) %>%
+  summarize(bias=mean(error), 
+            bias_abs=abs(bias),
+            sd=sd(error), 
+            R2 = cor(eoc_tot_c,
+                     .pred_eoc_tot_c_point)^2,
+            rmse=sqrt(mean(error^2)), 
+            rpd = sd(eoc_tot_c)/rmse,
+            mean_soc = mean(eoc_tot_c), 
+            sd_soc=sd(eoc_tot_c), 
+            n=n()) %>%
+  mutate(scenario=case_match(n_train, 0~"Scenario: Without local observations", 3~"Scenario: With local observations") %>% fct_inorder) %>%
+  ungroup
+```
 
-predict_sitelayer_combined_extra = tar_read(predict_soil_combined) %>%
-    inner_join(tar_read(hudson_soils)) %>%
-    group_by(group,
+```{r}
+metrics = errors %>%
+  group_by(model, fit_args, scenario) %>%
+  summarize(across(c(rmse, bias_abs, R2, rpd), mean))
+```
+
+```{r, fig.width=6.5, fig.height=6}
+p_rmse = errors %>%
+  plot_errors("rmse", "RMSE")
+
+p_bias = errors %>%
+  plot_errors("bias_abs", "Absolute bias") +
+  theme(
+    strip.background.x = element_blank(),    
+    strip.text.x = element_blank())
+
+p_R2 = errors %>%
+  plot_errors("R2", "R<sup>2</sup>") +
+  theme(
+    strip.text.y = ggtext::element_markdown(),
+    strip.background.x = element_blank(),    
+    strip.text.x = element_blank())
+
+p_rpd = errors %>%
+  plot_errors("rpd", "RPD") +
+  theme(
+    strip.background.x = element_blank(),    
+    strip.text.x = element_blank())
+
+p_rmse + 
+  p_rpd + 
+  p_bias +
+  p_R2 + 
+  plot_layout(ncol=1, axes="collect", guides = "collect") &
+  theme(legend.position="none") &
+  xlab("Model") &
+  theme(plot.margin = margin(0,0,0,0),
+        axis.title.y = element_blank())
+```
+
+# Figure 5: Uncertainty quantification
+
+
+```{r}
+summarize_uncertainty = function(df) {
+  df %>%
+  mutate(width=.pred_eoc_tot_c_q975 - .pred_eoc_tot_c_q025,
+         cover = .pred_eoc_tot_c_q975 > eoc_tot_c & .pred_eoc_tot_c_q025 < eoc_tot_c) %>%
+  summarize(width=mean(width), cover=mean(cover), n()) %>%
+  mutate(scenario=case_match(n_train, 0~"Scenario: Without local observations", 3~"Scenario: With local observations") %>% fct_inorder) %>%
+  ungroup %>%
+  inner_join(
+      MODELS %>%
+        mutate(model_name = fct_inorder(model_name))
+    )
+}
+
+plot_uncertainty = function(df,
+                            metric="cover", metric_name) {
+  df %>%
+    mutate(metric=metric_name) %>%
+    ggplot(aes(model_name, !!sym(metric), color=model_name, group=model_name)) +
+    stat_summary(fun.data=mean_se,
+                 position=position_dodge(width=0.5)) +
+    geom_hline(yintercept=0, alpha=0) +
+      xlab("Model") +
+      facet_grid(metric~scenario) +
+      theme(legend.position="none") +
+    scale_color_viridis_d()
+}
+```
+
+```{r, fig.width=6.5}
+p_uncertainty_sample = tar_read(predict_soil_combined) %>% 
+  inner_join(tar_read(hudson_soils)) %>%
+  group_by(group,
            model,
            fit_args,
-           n,
-           k,
-           cluster,
-           lay.depth.to.top
+           n_train,
+           #cluster
   ) %>%
-  mutate(se=(.pred_eoc_tot_c_q975 - .pred_eoc_tot_c_q025)/1.96/2) %>%
-  summarize(eoc_tot_c = mean(eoc_tot_c),
-            # first way
-            .pred_eoc_tot_c_se = sqrt(sum(se^2)/n()^2),
-            # second way
-            #.pred_eoc_tot_c_se = sd(.pred_eoc_tot_c_point)/sqrt(n()),
-            .pred_eoc_tot_c_point = mean(.pred_eoc_tot_c_point),
-            .pred_eoc_tot_c_q25 = .pred_eoc_tot_c_point - 0.67*.pred_eoc_tot_c_se,
-            .pred_eoc_tot_c_q75 = .pred_eoc_tot_c_point + 0.67*.pred_eoc_tot_c_se,
-            .pred_eoc_tot_c_q025 = .pred_eoc_tot_c_point - 1.96*.pred_eoc_tot_c_se,
-            .pred_eoc_tot_c_q975 = .pred_eoc_tot_c_point + 1.96*.pred_eoc_tot_c_se)  %>% 
-  mutate(coverage = between(eoc_tot_c, .pred_eoc_tot_c_q025, .pred_eoc_tot_c_q975)) %>%
-  group_by(model, n, k) %>%
-  summarize(mean(coverage), n()) %>%
-  View
+  summarize_uncertainty() %>%
+  plot_uncertainty("cover", "Level: Sample")
+
+p_uncertainty_sitelayer = tar_read(predict_sitelayer_combined) %>%
+  group_by(group,
+           model,
+           fit_args,
+           n_train
+  ) %>%
+  filter(!is.na(.pred_eoc_tot_c_q025)) %>%
+  summarize_uncertainty() %>%
+  plot_uncertainty("cover", "Level: Field × Layer") +
+  theme(
+    strip.background.x = element_blank(),    
+    strip.text.x = element_blank())
+
+p_uncertainty_sample +
+  p_uncertainty_sitelayer +
+  plot_layout(ncol=1, axes="collect", guides = "collect") &
+  theme(legend.position="none") &
+  xlab("Model") &
+  theme(plot.margin = margin(0,0,0,0)) &
+  coord_cartesian(ylim=c(0.0,1)) &
+  geom_hline(yintercept=0.95, linetype="dashed") &
+  ylab("Coverage") &
+  scale_y_continuous(labels = scales::percent)
+
+```
+
+# Figure 6: LMM fit
 
 
+```{r}
+# load one of the fitted LMM models
+fit_lmm = tar_read(fit_train_hudson_lfarmo_train_Ch_3_1_hudson_lfarmo_test_Ch_3_1_snv_32_lmer_SSURGO_group_farm_id...site_id.top_SSURGO_c.clay..sand..silt..pH_eoc_tot_c_log1p
+)
 
-predict_sitelayer_combined %>% View
-  #filter(model=="plsr") %>%
-  group_by(n, k, cluster, model) %>%
-  summarize(RMSE=sqrt(mean( (.pred_eoc_tot_c_point - eoc_tot_c)^2)),
-            eoc_tot_c = mean(eoc_tot_c)) %>%
-  group_by(model, k, n) %>%
-  summarize(mean(RMSE), sd(RMSE)/sqrt(n()), mean(eoc_tot_c), n())
+p_coef = fit_lmm %>%
+  gather_draws(`b_x_.*`, regex=TRUE) %>%
+  mutate(wavelength = as.numeric(str_sub(.variable, 5))) %>% 
+  group_by(wavelength) %>%
+  ggplot(aes(wavelength, .value)) +
+  stat_lineribbon(.width=c(0.5), fill="gray") +
+  ylab("Coefficient") +
+  xlab("Wavelength (nm)") +
+  scale_x_continuous(expand=0)
+
+p_fixed_SSURGO = fit_lmm %>%
+  gather_draws(`b_.*`, regex=TRUE) %>%
+  filter(!str_detect(.variable, "_x_") &
+           !str_detect(.variable, "Intercept")
+         ) %>%
+  ungroup %>%
+  mutate(property=str_match(.variable, "SSURGO_site_([^_]+)_")[,2]) %>% 
+  mutate(property = recode_factor(
+    property, pH = "pH", sand="Sand", silt="Silt", clay="Clay",
+    .ordered = TRUE)) %>%
+  ggplot(aes(property, .value)) +
+  stat_summary(fun.data=ggdist::median_qi, fun.args=list(.width=0.5))+
+  xlab("Property")
+  
+p_fixed_layer = fit_lmm %>% #get_variables() %>% as_tibble %>% View
+  gather_draws(`r_top`[i,j], regex=TRUE) %>%
+  filter(j=="Intercept") %>%
+  mutate(layer=recode_factor(i,
+    `0` = "0-15 cm", `15` = "15-30 cm", `30` = "30-60 cm")) %>%
+  ggplot(aes(layer, .value)) +
+  stat_summary(fun.data=ggdist::median_qi, fun.args=list(.width=0.5)) +
+  xlab("Soil layer")
+  
+p_coef + ggtitle ("(a) VisNIR slopes") +
+  p_fixed_SSURGO + ggtitle("(b) SSURGO intercepts") +
+  p_fixed_layer + ggtitle("(c) Soil layer intercepts") +
+  plot_layout(design = "AA\nBC",
+              axes="collect") &
+  coord_cartesian(ylim=c(-0.75, 0.75)) &
+  ylab("Coefficeint")
+```
+
+
+# Figure S3: Winkler scores
+
+
+```{r}
+get_prediction_scores = function(df) {
+  df %>%
+    #filter(!is.na(.pred_eoc_tot_c_q025)) %>%
+    group_by(model, n_train) %>%
+    mutate(cover = between(eoc_tot_c, 
+                           .pred_eoc_tot_c_q025,
+                           .pred_eoc_tot_c_q975)) %>%
+    mutate(winkler = (.pred_eoc_tot_c_q975 - .pred_eoc_tot_c_q025) + case_when(
+      eoc_tot_c < .pred_eoc_tot_c_q025 ~ 2/.05*(.pred_eoc_tot_c_q025-eoc_tot_c),
+      eoc_tot_c > .pred_eoc_tot_c_q975 ~ 2/.05*(eoc_tot_c - .pred_eoc_tot_c_q975),
+      .default = 0,
+    )) %>%
+    mutate(scenario=case_match(n_train, 0~"Scenario: Without local observations", 3~"Scenario: With local observations") %>% fct_inorder) %>%
+    ungroup %>%
+    inner_join(
+      MODELS %>%
+        mutate(model_name = fct_inorder(model_name))
+    )
+}
+
+scores_sample = get_prediction_scores(tar_read(predict_soil_combined))
+scores_sitelayer = get_prediction_scores(tar_read(predict_sitelayer_combined))
+  
+p_winkler_sample = scores_sample %>%
+  plot_uncertainty(metric="winkler", "Level: Sample")
+  
+p_winkler_sitelayer = scores_sitelayer %>%
+  plot_uncertainty(metric="winkler", "Level: Field × Layer") +
+  theme(
+    strip.background.x = element_blank(),    
+    strip.text.x = element_blank())
+
+p_winkler_sample +
+  p_winkler_sitelayer +
+  plot_layout(ncol=1, axes="collect", guides = "collect") &
+  ylab("Winkler score") &
+  theme(plot.margin = margin(0,0,0,0))
+```
+
+# Figure S4: Supplementary LMM fit 
+```{r, fig.height=6, fig.width=6}
+library(patchwork)
+p_vs_texture = fit_lmm %>%
+  gather_draws(`b_.*`, regex=TRUE) %>% 
+  filter(str_detect(.variable, "_x_") &
+           str_detect(.variable, "SSURGO")) %>%
+  mutate(wavelength=as.numeric(str_split_i(.variable, "_", -1))) %>% 
+  mutate(property=str_match(.variable, "SSURGO_site_([^_]+)_")[,2]) %>%
+  ungroup %>%
+  ggplot(aes(wavelength, .value)) + 
+  stat_lineribbon(.width=c(0.5), fill="lightgray") +
+  #stat_summary(fun.data=ggdist::median_qi, fun.args=list(.width=0.5)) +
+  facet_wrap(~property)
+
+p_vs_layer = fit_lmm %>% #get_variables() %>% as_tibble %>% View
+  gather_draws(`r_top`[i,j], regex=TRUE) %>%
+  mutate(wavelength=as.numeric(str_split_i(j, "_", -1))) %>%
+  mutate(layer=as.factor(i)) %>%
+  filter(j != "Intercept") %>%
+  ungroup %>%
+  group_by(layer, wavelength) %>%
+  summarize(.value=median(.value)) %>%
+  ggplot(aes(wavelength, .value, color=layer, fill=layer, group=layer)) +
+  scale_color_viridis_d() +
+  scale_fill_viridis_d() +
+  stat_lineribbon(.width=c(0.0), alpha=0.8)
+
+level_names = fit_lmm %>%
+  brms::get_prior() %>%
+  extract(prior, "level", "constant\\(sd_slope_(.*)\\)",
+          remove = FALSE) %>%
+  select(level, group) %>%
+  filter(!is.na(level)) %>%
+  mutate(group=case_match(
+    group,
+    "farm_id"~"Farm",
+    "top"~"Layer",
+    "site_id"~"Field",
+    "site_id:top"~"Field × Layer"
+  ))
+
+p_sds = fit_lmm %>%
+  gather_draws(`sd_slope_.*`, `sd_intercept_.*`, regex=TRUE) %>%
+  extract(.variable, c("type", "level"), "sd_(.*)_(.*)", remove = FALSE) %>%
+  inner_join(level_names) %>%
+  ggplot(aes(group, .value)) +
+  stat_summary() +
+  facet_wrap(~str_to_sentence(type)) +
+  ylab("Standard deviation") +
+  xlab("Level")
+  
+p_vs_texture + 
+    theme(legend.position="none") +
+    ggtitle("(a) Soil property slopes") +
+  #p_vs_layer + ggtitle("(b) Layer slopes") +
+  p_sds + ggtitle("(b) Random effect standard deviations") +
+  plot_layout(ncol=1) &
+  ylab("Slope")
 ```
