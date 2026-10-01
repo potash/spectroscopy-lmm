@@ -1,0 +1,89 @@
+---
+title: "Results"
+format: html
+editor: visual
+---
+
+```{r}
+library(targets)
+library(tidyverse)
+tar_config_set(store="../_targets")
+tar_config_set(store="../../../_targets")
+```
+
+```{r}
+tar_load(predict_soil_combined)
+
+predict_soil_combined %>%
+  #filter(model=="plsr") %>%
+  group_by(n, k, cluster, model) %>%
+  summarize(RMSE=sqrt(mean( (.pred_eoc_tot_c_point - eoc_tot_c)^2)),
+            eoc_tot_c = mean(eoc_tot_c)) %>%
+  group_by(model, k, n) %>%
+  summarize(mean(RMSE), sd(RMSE)/sqrt(n()), mean(eoc_tot_c), n())
+```
+
+```{r}
+library(lme4)
+
+predict_soil_combined %>%
+  filter(model=="plsr", n==3) %>%
+  group_by(n, k, cluster, model) %>%
+  summarize(RMSE=sqrt(mean( (.pred_eoc_tot_c_point - eoc_tot_c)^2)),
+            eoc_tot_c = mean(eoc_tot_c)) %>%
+  lmer(RMSE ~ (1|cluster), data=.) %>%
+  summary
+
+predict_soil_combined %>%
+  filter(model=="plsr", n==3) %>%
+  group_by(n, k, cluster, model) %>%
+  summarize(RMSE=sqrt(mean( (.pred_eoc_tot_c_point - eoc_tot_c)^2)),
+            eoc_tot_c = mean(eoc_tot_c)) %>%
+  group_by(k) %>%
+  summarize(mean(RMSE), sd(RMSE)/sqrt(n()))
+```
+
+```{r}
+tar_load(predict_farmlayer_combined)
+
+predict_farmlayer_combined %>%
+  group_by(model, n, k) %>%
+  mutate(coverage = between(eoc_tot_c, .pred_eoc_tot_c_q025, .pred_eoc_tot_c_q975)) %>%
+  summarize(mean(coverage), n())
+
+predict_sitelayer_combined_extra = tar_read(predict_soil_combined) %>%
+    inner_join(tar_read(hudson_soils)) %>%
+    group_by(group,
+           model,
+           fit_args,
+           n,
+           k,
+           cluster,
+           lay.depth.to.top
+  ) %>%
+  mutate(se=(.pred_eoc_tot_c_q975 - .pred_eoc_tot_c_q025)/1.96/2) %>%
+  summarize(eoc_tot_c = mean(eoc_tot_c),
+            # first way
+            .pred_eoc_tot_c_se = sqrt(sum(se^2)/n()^2),
+            # second way
+            #.pred_eoc_tot_c_se = sd(.pred_eoc_tot_c_point)/sqrt(n()),
+            .pred_eoc_tot_c_point = mean(.pred_eoc_tot_c_point),
+            .pred_eoc_tot_c_q25 = .pred_eoc_tot_c_point - 0.67*.pred_eoc_tot_c_se,
+            .pred_eoc_tot_c_q75 = .pred_eoc_tot_c_point + 0.67*.pred_eoc_tot_c_se,
+            .pred_eoc_tot_c_q025 = .pred_eoc_tot_c_point - 1.96*.pred_eoc_tot_c_se,
+            .pred_eoc_tot_c_q975 = .pred_eoc_tot_c_point + 1.96*.pred_eoc_tot_c_se)  %>% 
+  mutate(coverage = between(eoc_tot_c, .pred_eoc_tot_c_q025, .pred_eoc_tot_c_q975)) %>%
+  group_by(model, n, k) %>%
+  summarize(mean(coverage), n()) %>%
+  View
+
+
+
+predict_sitelayer_combined %>% View
+  #filter(model=="plsr") %>%
+  group_by(n, k, cluster, model) %>%
+  summarize(RMSE=sqrt(mean( (.pred_eoc_tot_c_point - eoc_tot_c)^2)),
+            eoc_tot_c = mean(eoc_tot_c)) %>%
+  group_by(model, k, n) %>%
+  summarize(mean(RMSE), sd(RMSE)/sqrt(n()), mean(eoc_tot_c), n())
+```
