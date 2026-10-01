@@ -23,9 +23,8 @@ theme_set(theme_bw())
 
 ```{r fig.height=4, fig.width=4}
 tar_read(hudson_NIR) %>% 
-  mutate(location_id=str_sub(soil_id, 1, -4), .after=soil_id) %>%
-  inner_join(tar_read(hudson_locations) %>%
-               inner_join(tar_read(hudson_sites))) %>%
+  inner_join(tar_read(hudson_soils)) %>%
+  inner_join(tar_read(hudson_sites)) %>%
   #sample_n(100) %>%
   pivot_longer(all_of(get_numeric_colnames(.))) %>%
   mutate(name = as.numeric(name)) %>%

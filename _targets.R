@@ -31,44 +31,36 @@ tar_option_set(packages = c(
   ),
   workspace_on_error=FALSE)
 
-# TODO: these shoudl be anonymized numbers instead
-sites = read_csv("~/uiuc/spectroscopy/manuscript/code/data/hudson_sites.csv")
+sites = read_csv("data/hudson_sites.csv")
 HUDSON_SITES = sites$site_id 
 HUDSON_FARM_IDS = sites$farm_id %>% unique
 
 hudson_targets = list(
   # spectroscopy scans
-  tar_target(hudson_moist_file,
-             "data/HudsonEDF_459set_FieldMoist_NSscans_avg_meta.csv",
+  tar_target(hudson_NIR_file,
+             "data/hudson_NIR.csv",
              format="file"),
   tar_target(
     hudson_NIR,
-    read_csv(hudson_moist_file) %>%
-      select(., soil_id=sample_id, sort_numeric_colnames(get_numeric_colnames(.)))
+    read_csv(hudson_NIR_file)
   ),
   
   # soil carbon concentration data
   tar_target(hudson_lab_file,
-             "data/HudsonEDF_459set_Cper_BD.csv",
+             "data/hudson_lab.csv",
              format="file"),
   tar_target(
     hudson_lab,
-    read_csv(hudson_lab_file) %>%
-      select(soil_id=sample_id, eoc_tot_c=Cper)
+    read_csv(hudson_lab_file)
   ),
   
-  # soil sample level data
+  # soil carbon concentration data
+  tar_target(hudson_soils_file,
+             "data/hudson_soils.csv",
+             format="file"),
   tar_target(
     hudson_soils,
-    read_csv(hudson_moist_file) %>%
-      select(sample_id) %>%
-      mutate(layer=str_sub(sample_id, -1),
-             site_id = str_split_i(sample_id, "\\.", 2),
-             location_id = str_sub(sample_id, 1, -4)) %>%
-      mutate(top=recode(layer, `1`=0, `2`=15, `3`=30),
-             bottom=recode(layer, `1`=15, `2`=30,`3`=60)) %>%
-      select(-layer) %>%
-      rename(soil_id=sample_id)
+    read_csv(hudson_soils_file)
   ),
   
   # site level data
@@ -99,7 +91,7 @@ split_targets = list(
       n_train = c(0, 3),
       k=1:3) %>%
       filter(k == 1 | n_train > 0),
-    names=c(test_farm, p, n_train, k),
+    names=c(test_farm, n_train, k),
     tar_target(hudson_lfarmo_split,
                hudson_soils %>%
                  select(location_id, site_id) %>%
@@ -143,7 +135,7 @@ cv_values = bind_rows(
 ) %>%
   expand_grid(NIR_transform=c(
     "snv",
-    "snv_32"
+    "snv_64"
   )) %>%
   mutate(train_sites=syms(train_sites),
          test_sites=syms(test_sites),
@@ -240,10 +232,11 @@ model_values = bind_rows(
 
 fit_values = tar_add_steps_to_values(cv_values, cv_targets) %>%
   expand_grid(model_values) %>%
-  # don't fit correlation matrix models with more than 64 wavelengths
   filter(
-    (grepl("lmer", model) & NIR_transform == "snv_32") |
-      (!grepl("lmer", model) & NIR_transform == "snv_32"))
+    # use 64 wavelengths for LMMs
+    (grepl("lmer", model) & NIR_transform == "snv_64") |
+      # use all wavelengths for other models
+      (!grepl("lmer", model) & NIR_transform == "snv"))
 
 
 fit_targets = tar_map(
@@ -254,7 +247,6 @@ fit_targets = tar_map(
     do.call(fit_function, c(list(
       y=names(y),
       train=train %>%
-        sample_frac(0.1) %>%
         transform_cols(y_transforms),
       test=test),
       fit_args) ) ),
