@@ -28,17 +28,17 @@ Specifically this repository contains:
 
 ## Reproducing the results
 
-### 1. Install required R packages:
+### 1. Install required R (4.5.0) packages:
 
 ```r
 install.packages(c(
-  "tidyverse",
-  "cmdstanr",
-  "brms",
-  "mdatools",
-  "tidybayes",
-  "resemble",
-  "tidymodels",
+  "tidyverse",  # 2.0.0
+  "cmdstanr",   # 0.9.0
+  "brms",       # 2.22.0
+  "mdatools",   # 0.14.2
+  "tidybayes",  # 3.0.7
+  "resemble",   # 3.0.0
+  "tidymodels"  # 1.3.0
 ))
 ```
 
