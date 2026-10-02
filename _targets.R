@@ -15,7 +15,7 @@ options(mc.cores=4)
 
 library(crew)
 tar_option_set(
-  #controller = crew_controller_local(workers = 4)
+  controller = crew_controller_local(workers = 4)
 )
 
 tar_option_set(packages = c(
@@ -31,9 +31,8 @@ tar_option_set(packages = c(
   ),
   workspace_on_error=FALSE)
 
-sites = read_csv("data/hudson_sites.csv")
-HUDSON_SITES = sites$site_id 
-HUDSON_FARM_IDS = sites$farm_id %>% unique
+# the farms ids are "A" through "G"
+HUDSON_FARM_IDS = LETTERS[1:8]
 
 hudson_targets = list(
   # spectroscopy scans
@@ -123,7 +122,7 @@ split_targets = list(
 # standardize training set NIR predictors
 # apply that same transformation to the test set
 cv_values = bind_rows(
-  expand_grid(site = HUDSON_FARM_IDS %>% head(3),
+  expand_grid(site = HUDSON_FARM_IDS %>% head(8),
               n_train=c(0, 3) %>% head(2),
               k=1:1) %>%
     filter(k == 1 | n_train > 0) %>%

@@ -348,7 +348,8 @@ p_uncertainty_sample +
 
 ```{r}
 # load one of the fitted LMM models
-fit_lmm = tar_read(fit_train_hudson_lfarmo_train_Ch_3_1_hudson_lfarmo_test_Ch_3_1_snv_32_lmer_SSURGO_group_farm_id...site_id.top_SSURGO_c.clay..sand..silt..pH_eoc_tot_c_log1p
+# picked farm C with local observations to maximize number of training samples among our CV models
+fit_lmm = tar_read(fit_train_hudson_lfarmo_train_C_3_1_hudson_lfarmo_test_C_3_1_snv_64_lmer_SSURGO_group_farm_id...site_id.top_SSURGO_c.clay..sand..silt..pH_eoc_tot_c_log1p
 )
 
 p_coef = fit_lmm %>%
