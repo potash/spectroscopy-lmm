@@ -39,7 +39,6 @@ install.packages(c(
   "tidybayes",
   "resemble",
   "tidymodels",
-  "rlang"
 ))
 ```
 
