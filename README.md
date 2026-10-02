@@ -28,9 +28,10 @@ Specifically this repository contains:
 
 ## Reproducing the results
 
-### 1. Install required R (4.5.0) packages:
+### 1. Install required R packages:
 
 ```r
+# Results generated using R version 4.5.0 and the following package versions
 install.packages(c(
   "tidyverse",  # 2.0.0
   "cmdstanr",   # 0.9.0
