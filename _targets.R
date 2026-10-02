@@ -15,7 +15,7 @@ options(mc.cores=4)
 
 library(crew)
 tar_option_set(
-  controller = crew_controller_local(workers = 4)
+  #controller = crew_controller_local(workers = 4)
 )
 
 tar_option_set(packages = c(
@@ -76,10 +76,7 @@ spectra_targets = list(
   tar_target(hudson_NIR_snv,
              get_NIR_snv(hudson_NIR)),
   tar_target(hudson_NIR_snv_64,
-             interpolate_spectra(hudson_NIR_snv, length.out=64)),
-  # very coarse spectrum used for quickly testing models
-  tar_target(hudson_NIR_snv_32,
-             interpolate_spectra(hudson_NIR_snv, length.out=32))
+             interpolate_spectra(hudson_NIR_snv, length.out=64))
 )
   
 # define training and test splits
@@ -124,7 +121,7 @@ split_targets = list(
 cv_values = bind_rows(
   expand_grid(site = HUDSON_FARM_IDS %>% head(8),
               n_train=c(0, 3) %>% head(2),
-              k=1:1) %>%
+              k=1:2) %>%
     filter(k == 1 | n_train > 0) %>%
     rowwise() %>%
     transmute(train_sites = str_glue("hudson_lfarmo_train_{site}_{n_train}_{k}"),
@@ -198,22 +195,22 @@ model_values = bind_rows(
   
   # Supplementary models
   # Cubist with SSURGO
-  # tibble_row(model="cubist_SSURGO", y=list(list(eoc_tot_c="log1p")),
-  #          fit_args = list(list(extraFactors=c("farm_id", "top", "site_id"),
-  #                               SSURGO=c("silt", "sand", "clay", "pH")))),
-  # 
-  # # lmer no SSURGO
-  # tibble_row(model="lmer_SSURGO",
-  #            y=list(list(eoc_tot_c="log1p")),
-  #            fit_args=list(list(group="farm_id + site_id*top",
-  #                               SSURGO=c(
-  #                               ) ))),
-  # # lmer no varying slopes
-  # tibble_row(model="lmer_SSURGO",
-  #            y=list(list(eoc_tot_c="log1p")),
-  #            fit_args=list(list(group="farm_id + site_id*top",
-  #                               SSURGO=c("clay", "sand", "silt", "pH"),
-  #                               varying_slopes=FALSE))),
+  tibble_row(model="cubist_SSURGO", y=list(list(eoc_tot_c="log1p")),
+           fit_args = list(list(extraFactors=c("farm_id", "top", "site_id"),
+                                SSURGO=c("silt", "sand", "clay", "pH")))),
+
+  # lmer no SSURGO
+  tibble_row(model="lmer_SSURGO",
+             y=list(list(eoc_tot_c="log1p")),
+             fit_args=list(list(group="farm_id + site_id*top",
+                                SSURGO=c(
+                                ) ))),
+  # lmer no varying slopes
+  tibble_row(model="lmer_SSURGO",
+             y=list(list(eoc_tot_c="log1p")),
+             fit_args=list(list(group="farm_id + site_id*top",
+                                SSURGO=c("clay", "sand", "silt", "pH"),
+                                varying_slopes=FALSE))),
 ) %>%
   # make sure there is a fit_args list in the table
   bind_rows(tibble_row(fit_args=list(list()))) %>%

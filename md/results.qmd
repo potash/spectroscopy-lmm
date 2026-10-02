@@ -450,21 +450,7 @@ p_vs_texture = fit_lmm %>%
   ungroup %>%
   ggplot(aes(wavelength, .value)) + 
   stat_lineribbon(.width=c(0.5), fill="lightgray") +
-  #stat_summary(fun.data=ggdist::median_qi, fun.args=list(.width=0.5)) +
   facet_wrap(~property)
-
-p_vs_layer = fit_lmm %>% #get_variables() %>% as_tibble %>% View
-  gather_draws(`r_top`[i,j], regex=TRUE) %>%
-  mutate(wavelength=as.numeric(str_split_i(j, "_", -1))) %>%
-  mutate(layer=as.factor(i)) %>%
-  filter(j != "Intercept") %>%
-  ungroup %>%
-  group_by(layer, wavelength) %>%
-  summarize(.value=median(.value)) %>%
-  ggplot(aes(wavelength, .value, color=layer, fill=layer, group=layer)) +
-  scale_color_viridis_d() +
-  scale_fill_viridis_d() +
-  stat_lineribbon(.width=c(0.0), alpha=0.8)
 
 level_names = fit_lmm %>%
   brms::get_prior() %>%
@@ -493,7 +479,6 @@ p_sds = fit_lmm %>%
 p_vs_texture + 
     theme(legend.position="none") +
     ggtitle("(a) Soil property slopes") +
-  #p_vs_layer + ggtitle("(b) Layer slopes") +
   p_sds + ggtitle("(b) Random effect standard deviations") +
   plot_layout(ncol=1) &
   ylab("Slope")
