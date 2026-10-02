@@ -1,10 +1,12 @@
 ---
-title: "Results"
-format: html
+title: "Figures"
+format: 
+  html:
+    embed-resources: true
 editor: visual
 ---
 
-```{r}
+```{r, echo=FALSE, message=FALSE}
 library(targets)
 library(tidyverse)
 library(patchwork)
@@ -13,19 +15,17 @@ source("../R/spectral_helper.R")
 
 tar_config_set(store="../_targets")
 
-knitr::opts_chunk$set(echo=FALSE, warning=FALSE, message=FALSE, 
-                      cache=FALSE, autodep = FALSE)
+knitr::opts_chunk$set(echo=FALSE, warning=FALSE, message=FALSE)
 
 theme_set(theme_bw())
 ```
 
-# Figure 1d: Spectroscopy data
+## Figure 1d: Spectroscopy data
 
 ```{r fig.height=4, fig.width=4}
 tar_read(hudson_NIR) %>% 
   inner_join(tar_read(hudson_soils)) %>%
   inner_join(tar_read(hudson_sites)) %>%
-  #sample_n(100) %>%
   pivot_longer(all_of(get_numeric_colnames(.))) %>%
   mutate(name = as.numeric(name)) %>%
   ggplot(aes(name, value)) +
@@ -37,7 +37,7 @@ tar_read(hudson_NIR) %>%
         panel.grid = element_blank())
 ```
 
-# Figure 2: SSURGO properties 
+## Figure 2: SSURGO properties
 
 ```{r, fig.width=6}
 library(GGally)
@@ -46,9 +46,7 @@ tar_read(hudson_sites) %>%
   rename_with(function(.x) str_replace_all(.x, "(SSURGO_site_|_r)", "")) %>%
   ggpairs(progress = FALSE,
           columns=c("pH", "sand", "silt", "clay"),
-          diag=list(continuous=wrap("barDiag", bins=8)
-                    #, mapping=aes(color=layer)
-                    ),
+          diag=list(continuous=wrap("barDiag", bins=8)),
           lower = list(continuous = wrap("points"), mapping=aes(
             alpha=0.25)),
           upper=list(continuous = wrap("cor", stars=FALSE)),
@@ -57,7 +55,8 @@ tar_read(hudson_sites) %>%
   scale_fill_viridis_d() +
   theme(legend.position="right")
 ```
-# Figure 3: Carbon distributions
+
+## Figure 3: Carbon distributions
 
 ```{r}
 hudson_df = tar_read(hudson_lab) %>%
@@ -146,7 +145,7 @@ p_sds = fit_vi %>%
   theme(legend.position="none")
 ```
 
-# Figure 4: Prediction performance
+## Figure 4: Prediction performance
 
 ```{r}
 MODELS = bind_rows(
@@ -177,7 +176,6 @@ plot_errors = function(df, metric, metric_name, models=MODELS) {
     mutate(metric=metric_name) %>%
     ggplot(aes(model_name, !!sym(metric), color=model_name, group=model_name)) +
     stat_summary(fun.data=mean_se,
-                 #fun.args = list(.width=0.5),
                  position=position_dodge(width=0.5)) +
     geom_hline(yintercept=0, alpha=0) +
     scale_color_viridis_d() +
@@ -204,7 +202,6 @@ errors = tar_read(predict_soil_combined) %>%
   left_join(tar_read(hudson_soils)) %>%
   rowwise() %>%
   group_by(group,
-           #lay.depth.to.top,
            model,
            NIR_transform,
            fit_args,
@@ -271,8 +268,7 @@ p_rmse +
         axis.title.y = element_blank())
 ```
 
-# Figure 5: Uncertainty quantification
-
+## Figure 5: Uncertainty quantification
 
 ```{r}
 summarize_uncertainty = function(df) {
@@ -321,7 +317,7 @@ p_uncertainty_sitelayer = tar_read(predict_sitelayer_combined) %>%
            fit_args,
            n_train
   ) %>%
-  summarize_uncertainty() %>% View
+  summarize_uncertainty() %>% 
   plot_uncertainty("cover", "Level: Field × Layer") +
   theme(
     strip.background.x = element_blank(),    
@@ -340,8 +336,7 @@ p_uncertainty_sample +
 
 ```
 
-# Figure 6: LMM fit
-
+## Figure 6: LMM fit
 
 ```{r}
 # load one of the fitted LMM models
@@ -373,7 +368,7 @@ p_fixed_SSURGO = fit_lmm %>%
   stat_summary(fun.data=ggdist::median_qi, fun.args=list(.width=0.5))+
   xlab("Property")
   
-p_fixed_layer = fit_lmm %>% #get_variables() %>% as_tibble %>% View
+p_fixed_layer = fit_lmm %>%
   gather_draws(`r_top`[i,j], regex=TRUE) %>%
   filter(j=="Intercept") %>%
   mutate(layer=recode_factor(i,

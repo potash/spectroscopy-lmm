@@ -119,8 +119,8 @@ split_targets = list(
 # standardize training set NIR predictors
 # apply that same transformation to the test set
 cv_values = bind_rows(
-  expand_grid(site = HUDSON_FARM_IDS %>% head(8),
-              n_train=c(0, 3) %>% head(2),
+  expand_grid(site = HUDSON_FARM_IDS,
+              n_train=c(0, 3),
               k=1:1) %>%
     filter(k == 1 | n_train > 0) %>%
     rowwise() %>%
@@ -195,22 +195,22 @@ model_values = bind_rows(
   
   # Supplementary models
   # Cubist with SSURGO
-  tibble_row(model="cubist_SSURGO", y=list(list(eoc_tot_c="log1p")),
-           fit_args = list(list(extraFactors=c("farm_id", "top", "site_id"),
-                                SSURGO=c("silt", "sand", "clay", "pH")))),
-
-  # lmer no SSURGO
-  tibble_row(model="lmer_SSURGO",
-             y=list(list(eoc_tot_c="log1p")),
-             fit_args=list(list(group="farm_id + site_id*top",
-                                SSURGO=c(
-                                ) ))),
-  # lmer no varying slopes
-  tibble_row(model="lmer_SSURGO",
-             y=list(list(eoc_tot_c="log1p")),
-             fit_args=list(list(group="farm_id + site_id*top",
-                                SSURGO=c("clay", "sand", "silt", "pH"),
-                                varying_slopes=FALSE))),
+  # tibble_row(model="cubist_SSURGO", y=list(list(eoc_tot_c="log1p")),
+  #          fit_args = list(list(extraFactors=c("farm_id", "top", "site_id"),
+  #                               SSURGO=c("silt", "sand", "clay", "pH")))),
+  # 
+  # # lmer no SSURGO
+  # tibble_row(model="lmer_SSURGO",
+  #            y=list(list(eoc_tot_c="log1p")),
+  #            fit_args=list(list(group="farm_id + site_id*top",
+  #                               SSURGO=c(
+  #                               ) ))),
+  # # lmer no varying slopes
+  # tibble_row(model="lmer_SSURGO",
+  #            y=list(list(eoc_tot_c="log1p")),
+  #            fit_args=list(list(group="farm_id + site_id*top",
+  #                               SSURGO=c("clay", "sand", "silt", "pH"),
+  #                               varying_slopes=FALSE))),
 ) %>%
   # make sure there is a fit_args list in the table
   bind_rows(tibble_row(fit_args=list(list()))) %>%
