@@ -15,7 +15,7 @@ options(mc.cores=4)
 
 library(crew)
 tar_option_set(
-  #controller = crew_controller_local(workers = 4)
+  controller = crew_controller_local(workers = 4)
 )
 
 tar_option_set(packages = c(
@@ -79,13 +79,13 @@ spectra_targets = list(
              interpolate_spectra(hudson_NIR_snv, length.out=64))
 )
   
-# define training and test splits
+# define training and test splits for leave-one-farm out cross validation
 split_targets = list( 
   tar_map(
     values=expand_grid(
       test_farm=HUDSON_FARM_IDS,
       n_train = c(0, 3),
-      k=1:3) %>%
+      k=1:1) %>%
       filter(k == 1 | n_train > 0),
     names=c(test_farm, n_train, k),
     tar_target(hudson_lfarmo_split,
@@ -121,7 +121,7 @@ split_targets = list(
 cv_values = bind_rows(
   expand_grid(site = HUDSON_FARM_IDS %>% head(8),
               n_train=c(0, 3) %>% head(2),
-              k=1:2) %>%
+              k=1:1) %>%
     filter(k == 1 | n_train > 0) %>%
     rowwise() %>%
     transmute(train_sites = str_glue("hudson_lfarmo_train_{site}_{n_train}_{k}"),

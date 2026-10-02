@@ -14,7 +14,7 @@ source("../R/spectral_helper.R")
 tar_config_set(store="../_targets")
 
 knitr::opts_chunk$set(echo=FALSE, warning=FALSE, message=FALSE, 
-                      cache=TRUE, autodep = TRUE)
+                      cache=FALSE, autodep = FALSE)
 
 theme_set(theme_bw())
 ```
@@ -200,7 +200,6 @@ recode_model_factor = function(df, models) {
 
 errors = tar_read(predict_soil_combined) %>%
   rowwise() %>% 
-  mutate(y_str = named_list_to_str2(y)) %>%
   ungroup %>%
   left_join(tar_read(hudson_soils)) %>%
   rowwise() %>%
@@ -209,7 +208,6 @@ errors = tar_read(predict_soil_combined) %>%
            model,
            NIR_transform,
            fit_args,
-           y_str,
            n_train,
            cluster,
            k
@@ -236,7 +234,7 @@ errors = tar_read(predict_soil_combined) %>%
 ```{r}
 metrics = errors %>%
   group_by(model, fit_args, scenario) %>%
-  summarize(across(c(rmse, bias_abs, R2, rpd), mean))
+  summarize(across(c(rmse, bias_abs, R2, rpd), list(mean=mean, sd=sd)))
 ```
 
 ```{r, fig.width=6.5, fig.height=6}
@@ -323,8 +321,7 @@ p_uncertainty_sitelayer = tar_read(predict_sitelayer_combined) %>%
            fit_args,
            n_train
   ) %>%
-  filter(!is.na(.pred_eoc_tot_c_q025)) %>%
-  summarize_uncertainty() %>%
+  summarize_uncertainty() %>% View
   plot_uncertainty("cover", "Level: Field × Layer") +
   theme(
     strip.background.x = element_blank(),    
@@ -392,94 +389,4 @@ p_coef + ggtitle ("(a) VisNIR slopes") +
               axes="collect") &
   coord_cartesian(ylim=c(-0.75, 0.75)) &
   ylab("Coefficeint")
-```
-
-
-# Figure S3: Winkler scores
-
-
-```{r}
-get_prediction_scores = function(df) {
-  df %>%
-    #filter(!is.na(.pred_eoc_tot_c_q025)) %>%
-    group_by(model, n_train) %>%
-    mutate(cover = between(eoc_tot_c, 
-                           .pred_eoc_tot_c_q025,
-                           .pred_eoc_tot_c_q975)) %>%
-    mutate(winkler = (.pred_eoc_tot_c_q975 - .pred_eoc_tot_c_q025) + case_when(
-      eoc_tot_c < .pred_eoc_tot_c_q025 ~ 2/.05*(.pred_eoc_tot_c_q025-eoc_tot_c),
-      eoc_tot_c > .pred_eoc_tot_c_q975 ~ 2/.05*(eoc_tot_c - .pred_eoc_tot_c_q975),
-      .default = 0,
-    )) %>%
-    mutate(scenario=case_match(n_train, 0~"Scenario: Without local observations", 3~"Scenario: With local observations") %>% fct_inorder) %>%
-    ungroup %>%
-    inner_join(
-      MODELS %>%
-        mutate(model_name = fct_inorder(model_name))
-    )
-}
-
-scores_sample = get_prediction_scores(tar_read(predict_soil_combined))
-scores_sitelayer = get_prediction_scores(tar_read(predict_sitelayer_combined))
-  
-p_winkler_sample = scores_sample %>%
-  plot_uncertainty(metric="winkler", "Level: Sample")
-  
-p_winkler_sitelayer = scores_sitelayer %>%
-  plot_uncertainty(metric="winkler", "Level: Field × Layer") +
-  theme(
-    strip.background.x = element_blank(),    
-    strip.text.x = element_blank())
-
-p_winkler_sample +
-  p_winkler_sitelayer +
-  plot_layout(ncol=1, axes="collect", guides = "collect") &
-  ylab("Winkler score") &
-  theme(plot.margin = margin(0,0,0,0))
-```
-
-# Figure S4: Supplementary LMM fit 
-```{r, fig.height=6, fig.width=6}
-library(patchwork)
-p_vs_texture = fit_lmm %>%
-  gather_draws(`b_.*`, regex=TRUE) %>% 
-  filter(str_detect(.variable, "_x_") &
-           str_detect(.variable, "SSURGO")) %>%
-  mutate(wavelength=as.numeric(str_split_i(.variable, "_", -1))) %>% 
-  mutate(property=str_match(.variable, "SSURGO_site_([^_]+)_")[,2]) %>%
-  ungroup %>%
-  ggplot(aes(wavelength, .value)) + 
-  stat_lineribbon(.width=c(0.5), fill="lightgray") +
-  facet_wrap(~property)
-
-level_names = fit_lmm %>%
-  brms::get_prior() %>%
-  extract(prior, "level", "constant\\(sd_slope_(.*)\\)",
-          remove = FALSE) %>%
-  select(level, group) %>%
-  filter(!is.na(level)) %>%
-  mutate(group=case_match(
-    group,
-    "farm_id"~"Farm",
-    "top"~"Layer",
-    "site_id"~"Field",
-    "site_id:top"~"Field × Layer"
-  ))
-
-p_sds = fit_lmm %>%
-  gather_draws(`sd_slope_.*`, `sd_intercept_.*`, regex=TRUE) %>%
-  extract(.variable, c("type", "level"), "sd_(.*)_(.*)", remove = FALSE) %>%
-  inner_join(level_names) %>%
-  ggplot(aes(group, .value)) +
-  stat_summary() +
-  facet_wrap(~str_to_sentence(type)) +
-  ylab("Standard deviation") +
-  xlab("Level")
-  
-p_vs_texture + 
-    theme(legend.position="none") +
-    ggtitle("(a) Soil property slopes") +
-  p_sds + ggtitle("(b) Random effect standard deviations") +
-  plot_layout(ncol=1) &
-  ylab("Slope")
 ```
