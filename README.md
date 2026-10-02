@@ -8,7 +8,7 @@ European Journal of Soil Science (2026)
 
 ## Overview
 
-Data processing and model cross validation is executed in an R [targets](https://books.ropensci.org/targets/) pipeline and then results are processed into figures in a quarto notebook.
+Data processing and model cross validation is executed in an R [targets](https://books.ropensci.org/targets/) pipeline and then results are loaded into a quarto notebook where they are visualized.
 Specifically this repository contains:
 
 ```sh
@@ -19,9 +19,9 @@ Specifically this repository contains:
 │   ├── hudson_sites.csv  # site-level metadata
 │   └── hudson_soils.csv  # sample-level metadata
 ├── R/                    # helper scripts
-├── figures/              # figures
-│   ├── figures.html      # rendered quarto
-│   └── figures.qmd       # source quarto
+├── figures/              # manuscript figures
+│   ├── figures.html      # rendered document
+│   └── figures.qmd       # source document
 ├── README.md             # this file
 └── _targets.R            # targets pipeline definition
 ```
