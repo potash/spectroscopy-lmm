@@ -18,10 +18,10 @@ Specifically this repository contains:
 │   ├── hudson_NIR.csv    # spectroscopy predictors
 │   ├── hudson_sites.csv  # site-level metadata
 │   └── hudson_soils.csv  # sample-level metadata
-├── R/                    # helper scripts
 ├── figures/              # manuscript figures
 │   ├── figures.html      # rendered document
 │   └── figures.qmd       # source document
+├── R/                    # helper scripts
 ├── README.md             # this file
 └── _targets.R            # targets pipeline definition
 ```
