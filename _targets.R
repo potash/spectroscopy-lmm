@@ -15,7 +15,9 @@ options(mc.cores=4)
 
 library(crew)
 tar_option_set(
-  controller = crew_controller_local(workers = 4)
+  # commented out beause running workflow in parallel 
+  # is complicated a bit by brms cached compilation
+  # controller = crew_controller_local(workers = 4)
 )
 
 tar_option_set(packages = c(
