@@ -2,9 +2,7 @@
 
 Code and data to reproduce the results in:  
 
-*Transfer and uncertainty for soil spectroscopy: a parsimonious approach using Bayesian mixed models and soil surveys*<br/>
-E Potash, C Partida, J Safanelli, E Forbes, A Polussa, T Runge, M Sheffer, J Sanderman<br/>
-European Journal of Soil Science (2026)
+*Transfer and uncertainty for soil spectroscopy: a parsimonious approach using Bayesian mixed models and soil surveys.* E Potash, C Partida, J Safanelli, E Forbes, A Polussa, T Runge, M Sheffer, J Sanderman. European Journal of Soil Science (2026)
 
 ## Overview
 
@@ -71,4 +69,4 @@ I suspect that writing a more vectorized version directly in Stan would both com
 
 ### Contact
 
-If you run into any issues or have any questions you can contact [Eric Potash](eric@k2co3.net).
+If you run into any issues or have any questions you can contact [Eric Potash](mailto:eric@k2co3.net).
