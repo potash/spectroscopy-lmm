@@ -38,6 +38,7 @@ install.packages(c(
   "tidybayes",  # 3.0.7
   "resemble",   # 3.0.0
   "tidymodels"  # 1.3.0
+  "targets"     # 1.11.3
 ))
 ```
 
